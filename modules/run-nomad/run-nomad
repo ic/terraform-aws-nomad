@@ -32,6 +32,7 @@ function print_usage {
   echo -e "  --use-sudo\t\tIf set, run the Nomad agent with sudo. By default, sudo is only used if --client is set."
   echo -e "  --environment\t\A single environment variable in the key/value pair form 'KEY=\"val\"' to pass to Nomad as environment variable when starting it up. Repeat this option for additional variables. Optional."
   echo -e "  --skip-nomad-config\tIf this flag is set, don't generate a Nomad configuration file. Optional. Default is false."
+  echo -e "  --datacenter\t\tData center name. Default to the name of the availability zone."
   echo
   echo "Example:"
   echo
@@ -128,12 +129,12 @@ function generate_nomad_config {
   local readonly num_servers="$3"
   local readonly config_dir="$4"
   local readonly user="$5"
+  local readonly datacenter="$6"
   local readonly config_path="$config_dir/$NOMAD_CONFIG_FILE"
 
   local instance_id=""
   local instance_ip_address=""
   local instance_region=""
-  local instance_availability_zone=""
 
   instance_id=$(get_instance_id)
   instance_ip_address=$(get_instance_ip_address)
@@ -163,7 +164,7 @@ EOF
 
   log_info "Creating default Nomad config file in $config_path"
   cat > "$config_path" <<EOF
-datacenter = "$availability_zone"
+datacenter = "$datacenter"
 name       = "$instance_id"
 region     = "$instance_region"
 bind_addr  = "0.0.0.0"
@@ -275,6 +276,7 @@ function run {
   local user=""
   local skip_nomad_config="false"
   local use_sudo=""
+  local datacenter=""
   local environment=()
   local all_args=()
 
@@ -338,6 +340,10 @@ function run {
       --use-sudo)
         use_sudo="true"
         ;;
+      --datacenter)
+        datacenter="$2"
+        shift
+        ;;
       --environment)
         assert_not_empty "$key" "$2"
         environment+=("$2")
@@ -374,6 +380,10 @@ function run {
     fi
   fi
 
+  if [[ -z "$datacenter" ]]; then
+    datacenter=$(get_instance_availability_zone)
+  fi
+
   assert_is_installed "systemctl"
   assert_is_installed "aws"
   assert_is_installed "curl"
@@ -400,7 +410,7 @@ function run {
   if [[ "$skip_nomad_config" == "true" ]]; then
     log_info "The --skip-nomad-config flag is set, so will not generate a default Nomad config file."
   else
-    generate_nomad_config "$server" "$client" "$num_servers" "$config_dir" "$user"
+    generate_nomad_config "$server" "$client" "$num_servers" "$config_dir" "$user" "$datacenter"
   fi
 
   generate_systemd_config "$SYSTEMD_CONFIG_PATH" "$config_dir" "$data_dir" "$bin_dir" "$systemd_stdout" "$systemd_stderr" "$user" "$use_sudo" "${environment[@]}"
